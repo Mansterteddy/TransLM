@@ -1,0 +1,3 @@
+*.bin
+*.tsv
+__pycache__
