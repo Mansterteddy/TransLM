@@ -171,65 +171,14 @@ masklm_ins = EvalMaskLM()
 # Test Case
 
 query = "how much did microsoft pay for lobe"
-url = "https://en.wikipedia.org/wiki/List_of_mergers_and_acquisitions_by_Microsoft"
-title = "List of mergers and acquisitions by Microsoft - Wikipedia"
-snippet = "Key acquisitions. Microsoft's first acquisition was Forethought on July 30, 1987. Forethought was founded in 1983 and developed a presentation program that would later be known as Microsoft PowerPoint.. On December 31, 1997, Microsoft acquired Hotmail.com for $500 million, its largest acquisition at the time, and integrated Hotmail into its MSN group of services."
+url = ""
+title = ""
+snippet = "Microsoft releases preview of Lobe training app for machine-learning ZDNet. Microsoft is continuing to look for ways to make machine-learning technology easier to use. In 2018, Microsoft bought Lobe, a San Francisco-based startup that made a platform for building, training and shipping custom deep-learning models."
 market = "en-us"
 
 input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
 #print("input_ids: ", input_ids)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 8)
 
-query = "how much did microsoft pay for lobe"
-url = "https://www.cnbc.com/2018/09/13/microsoft-acquires-lobe-ai-startup.html"
-title = "Microsoft acquires Lobe, A.I start-up - CNBC"
-snippet = "Microsoft buys Lobe, a small start-up that makes it easier to build A.I. apps. Published Thu, Sep 13 2018 1:53 PM EDT. Jordan Novet @jordannovet. Key Points."
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
+mask_list = [8, 9]
 masklm_ins.inference_test(input_ids, input_mask, segment_ids, 8)
 masklm_ins.inference_test(input_ids, input_mask, segment_ids, 9)
-
-mask_list = [18, 19, 43, 44, 54, 55]
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 8, mask_list)
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 9, mask_list)
-
-query = "python"
-url = "https://www.python.org/"
-title = "Welcome to Python.org"
-snippet = "Python knows the usual control flow statements that other languages speak — if, for, while and range — with some of its own twists, of course. More control flow tools in Python 3. Python is a programming language that lets you work quickly and integrate systems more effectively."
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 1)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 2)
-
-mask_list = [9, 10, 14, 15, 18, 19, 57, 58, 60, 61]
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 1, mask_list)
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 2, mask_list)
-
-query = "ease hot tub chlorine"
-url = "https://www.frogproducts.com/product/frog-ease-floating-system/"
-title = "Effective Hot Tub Sanitizer with far less work | 75% Less ..."
-snippet = "What size hot tub will FROG @ease work in? Hot tubs 150 to 600 are perfect for FROG @ease. How does FROG @ease compare to bromine in a feeder or using chlorine? With standard chemicals you experience peaks and valleys in your sanitizing routine. When you add chemical, the level spikes, when you use the tub, the level drops."
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 1)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 2)
-
-mask_list = [34, 35, 48, 49, 65, 66, 73, 74]
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 1, mask_list)
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 2, mask_list)
-
-query = "ease hot tub chlorine"
-url = ""
-title = ""
-snippet = ""
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 1)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 2)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 5)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 6)

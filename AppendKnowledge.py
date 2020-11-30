@@ -9,8 +9,35 @@ import numpy as np
 import torch 
 import torch.autograd as autograd
 import torch.nn.functional as F
+from torch import nn
 
-class EvalMaskLM(object):
+from transformers.modeling_bert import BertModel, BertPreTrainedModel
+
+class RankLMV5(BertPreTrainedModel):
+    def __init__(self, config):
+        super(RankLMV5, self).__init__(config)
+        self.bert = BertModel(config)
+        self.cls_hrs = nn.Sequential(*self.default_head(1024, 5))
+        self.init_weights()
+    
+    def default_head(self, hidden_size, classes, use_numfeat=False):
+        return [nn.Linear(2 * hidden_size if use_numfeat else hidden_size, hidden_size),
+                nn.Tanh(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_size, classes)]
+
+    def forward(self, input_ids, token_type_ids, attention_mask):
+
+        outputs = self.bert(input_ids, attention_mask, token_type_ids)
+        cls_output = outputs[0][:,0,:]
+        hrs_logits = self.cls_hrs(cls_output)
+
+        softmax_layer = nn.Softmax(dim=1)
+        hrs_scores = softmax_layer(hrs_logits)
+
+        return hrs_scores
+
+class EvalModel(object):
 
     def __init__(self, cuda=True):
         self.tokenizer = tokenization_unilm.SPETokenizer("./BingLR_Vocab/vocab.txt", "./BingLR_Vocab/sentencepiece.bpe.model")
@@ -24,11 +51,8 @@ class EvalMaskLM(object):
 
         self.model_path = "./BingLR_Model/"
         binglr_state_dict = torch.load("./BingLR_Model/pytorch_model.bin", map_location='cpu')["model"]
-        self.model = self.to_cuda(transformers.BertForMaskedLM.from_pretrained(self.model_path, state_dict=binglr_state_dict))
+        self.model = self.to_cuda(RankLMV5.from_pretrained(self.model_path, state_dict=binglr_state_dict))
         self.model.eval()
-
-        self.topk = 20
-        self.mask_id = 250001
 
     def _truncate_seq(self, tokens, max_length):
         """Truncates a sequence pair in place to the maximum length."""
@@ -63,9 +87,10 @@ class EvalMaskLM(object):
     def remove_control_char(self, input_string):
         return ''.join([c for c in input_string if not unicodedata.category(c).startswith('C')])
 
-    def tokenize(self, query, url, title, snippet, market):
+    def tokenize(self, query, query_aug, url, title, snippet, market):
         
         query = self.remove_control_char(query.lower().strip())
+        query_aug = self.remove_control_char(query_aug.lower().strip())
         title = title.lower().replace("\ue000", "").replace("\ue001", "").replace("...", "")
         snippet = snippet.lower().replace("\ue000", "").replace("\ue001", "")
 
@@ -87,14 +112,16 @@ class EvalMaskLM(object):
             district = "dist_un"
                
         query = self.tokenizer.tokenize(query)
+        query_aug = self.tokenizer.tokenize(query_aug)
         title = self.tokenizer.tokenize(title)
         snippet = self.tokenizer.tokenize(snippet)
 
         query = self._truncate_seq(query, 16)
+        query_aug = self._truncate_seq(query_aug, 16)
         url = self._truncate_seq(url, 32)
         title = self._truncate_seq(title, 32)
 
-        query = query + [language, district]
+        query = query + query_aug + [language, district]
 
         doc = [["[Title]"], title, ["[Url]"], url, ["[Snippet]"], snippet]
         doc = [x for y in doc for x in y]
@@ -119,117 +146,40 @@ class EvalMaskLM(object):
 
         return input_ids, segment_ids, input_mask
 
-    def inference_test(self, input_ids, input_mask, segment_ids, token_index):
+    def inference_test(self, input_ids, input_mask, segment_ids):
         
-        #print(input_ids)
-        input_ids[token_index] = self.mask_id
-        #print(input_ids)
-        #assert 0 == 1
-
         input_ids = self.to_cuda(torch.tensor([input_ids]))
         input_mask = self.to_cuda(torch.tensor([input_mask]))
         segment_ids = self.to_cuda(torch.tensor([segment_ids]))
 
         output = self.model(input_ids, input_mask, segment_ids)
+        output = output.detach().cpu().numpy()
 
-        cur_logits = autograd.Variable(output[0][token_index])
-        cur_prob = F.softmax(cur_logits, dim=0)
+        output = output[0][0] * 1 + output[0][1] * 2 + output[0][2] * 3 + output[0][3] * 4 + output[0][4] * 5
+        print(output)
 
-        topk_id = torch.topk(cur_prob, self.topk)[1].tolist()
-        #print("topk_id: ", topk_id)
-        topk_token = self.tokenizer.convert_ids_to_tokens(topk_id)
-        print("\n")
-        print("topk_token: ", topk_token)
-        print("\n")
-
-    def inference_test_list(self, input_ids, input_mask, segment_ids, token_index, token_index_list):
-        
-        input_ids[token_index] = self.mask_id
-
-        for index_item in token_index_list:
-            input_ids[index_item] = self.mask_id
-
-        input_ids = self.to_cuda(torch.tensor([input_ids]))
-        input_mask = self.to_cuda(torch.tensor([input_mask]))
-        segment_ids = self.to_cuda(torch.tensor([segment_ids]))
-
-        output = self.model(input_ids, input_mask, segment_ids)
-
-        cur_logits = autograd.Variable(output[0][token_index])
-        cur_prob = F.softmax(cur_logits, dim=0)
-
-        topk_id = torch.topk(cur_prob, self.topk)[1].tolist()
-        #print("topk_id: ", topk_id)
-        topk_token = self.tokenizer.convert_ids_to_tokens(topk_id)
-        print("\n")
-        print("topk_token: ", topk_token)
-        print("\n")
 
 # Init instance
-masklm_ins = EvalMaskLM()
+masklm_ins = EvalModel()
 
 # Test Case
 
 query = "how much did microsoft pay for lobe"
+query_aug = "In 2018, Microsoft bought Lobe, a San Francisco-based startup that made a platform for building, training and shipping custom deep-learning models. This week, Microsoft made some of Lobe's technology publicly available. Load Error. On October 26, available a public preview of a Lobe app for training machine-learning models."
 url = "https://en.wikipedia.org/wiki/List_of_mergers_and_acquisitions_by_Microsoft"
 title = "List of mergers and acquisitions by Microsoft - Wikipedia"
 snippet = "Key acquisitions. Microsoft's first acquisition was Forethought on July 30, 1987. Forethought was founded in 1983 and developed a presentation program that would later be known as Microsoft PowerPoint.. On December 31, 1997, Microsoft acquired Hotmail.com for $500 million, its largest acquisition at the time, and integrated Hotmail into its MSN group of services."
 market = "en-us"
 
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-#print("input_ids: ", input_ids)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 8)
+input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, query_aug, url, title, snippet, market)
+masklm_ins.inference_test(input_ids, input_mask, segment_ids)
 
 query = "how much did microsoft pay for lobe"
+query_aug = "In 2018, Microsoft bought Lobe, a San Francisco-based startup that made a platform for building, training and shipping custom deep-learning models. This week, Microsoft made some of Lobe's technology publicly available. Load Error. On October 26, available a public preview of a Lobe app for training machine-learning models."
 url = "https://www.cnbc.com/2018/09/13/microsoft-acquires-lobe-ai-startup.html"
 title = "Microsoft acquires Lobe, A.I start-up - CNBC"
 snippet = "Microsoft buys Lobe, a small start-up that makes it easier to build A.I. apps. Published Thu, Sep 13 2018 1:53 PM EDT. Jordan Novet @jordannovet. Key Points."
 market = "en-us"
 
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 8)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 9)
-
-mask_list = [18, 19, 43, 44, 54, 55]
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 8, mask_list)
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 9, mask_list)
-
-query = "python"
-url = "https://www.python.org/"
-title = "Welcome to Python.org"
-snippet = "Python knows the usual control flow statements that other languages speak — if, for, while and range — with some of its own twists, of course. More control flow tools in Python 3. Python is a programming language that lets you work quickly and integrate systems more effectively."
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 1)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 2)
-
-mask_list = [9, 10, 14, 15, 18, 19, 57, 58, 60, 61]
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 1, mask_list)
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 2, mask_list)
-
-query = "ease hot tub chlorine"
-url = "https://www.frogproducts.com/product/frog-ease-floating-system/"
-title = "Effective Hot Tub Sanitizer with far less work | 75% Less ..."
-snippet = "What size hot tub will FROG @ease work in? Hot tubs 150 to 600 are perfect for FROG @ease. How does FROG @ease compare to bromine in a feeder or using chlorine? With standard chemicals you experience peaks and valleys in your sanitizing routine. When you add chemical, the level spikes, when you use the tub, the level drops."
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 1)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 2)
-
-mask_list = [34, 35, 48, 49, 65, 66, 73, 74]
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 1, mask_list)
-masklm_ins.inference_test_list(input_ids, input_mask, segment_ids, 2, mask_list)
-
-query = "ease hot tub chlorine"
-url = ""
-title = ""
-snippet = ""
-market = "en-us"
-
-input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, url, title, snippet, market)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 1)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 2)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 5)
-masklm_ins.inference_test(input_ids, input_mask, segment_ids, 6)
+input_ids, segment_ids, input_mask = masklm_ins.tokenize(query, query_aug, url, title, snippet, market)
+masklm_ins.inference_test(input_ids, input_mask, segment_ids)
